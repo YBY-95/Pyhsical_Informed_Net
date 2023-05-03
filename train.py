@@ -80,8 +80,8 @@ def load_data(args):
 
 
 def get_model(args):
-    # 人工造一些特征出来
-    sim_feature = np.zeros([6, 4096])
+    # 人工造一些特征出来，后期需要根据仿真信号输入
+    sim_feature = np.zeros([args.num_class, 4096])
     channel = list(np.arange(0, args.num_class))
     feature = [200, 400, 500, 950]
     feature_index = list(itertools.product(channel, feature))
@@ -93,7 +93,8 @@ def get_model(args):
                          base_net=args.backbone,
                          max_iter=args.max_iter,
                          use_bottleneck=args.use_bottleneck,
-                         use_PIlayer=args.use_PIlayer).to(args.device)
+                         use_PIlayer=args.use_PIlayer,
+                         PI_layer_type="2D").to(args.device)
     return model
 
 
@@ -126,7 +127,7 @@ def train(model, train_loader, test_loader, optimizer, lr_scheduler, args):
             iter_source = iter(train_loader)
 
             for f in range(args.n_iter_per_epoch):
-                data_source, label_source, _ = next(iter_source)  # .next()
+                data_source, label_source = next(iter_source)  # .next()
                 data_source, label_source = data_source.to(
                     args.device), label_source.to(args.device)
 
@@ -134,6 +135,7 @@ def train(model, train_loader, test_loader, optimizer, lr_scheduler, args):
 
                 optimizer.zero_grad()
                 clf_loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.pi_layer.shape_parameter_2, max_norm=10, norm_type=2)
                 optimizer.step()
                 if lr_scheduler:
                     lr_scheduler.step()
@@ -201,14 +203,14 @@ if __name__ == '__main__':
     model_name = "PInet"
     dataset_name = "CWRU"
     # freq_sample, time-freq
-    data_type = "freq_sample"
-    backbone = "alexnet"
+    data_type = "time_freq_sample"
+    backbone = "alexnet_2d"
 
     config_dir = r'D:\python_workfile\Physical_Informed\YAML'
-    data_dir = r'D:\DATABASE\ZXJ_GD\sample'
+    data_dir = r'D:\DATABASE\CWRUData-picture'
     sim_data_dir = r''
 
-    domain_name = "100-B1-4_CH1-8"
+    domain_name = "train"
 
     sys.argv[1] = '--config'
     sys.argv[2] = config_dir + '\\' + model_name+'.yaml'
@@ -216,12 +218,14 @@ if __name__ == '__main__':
 
     parser = get_parser()
     args = parser.parse_args()
+    setattr(args, "num_class", 14)
     setattr(args, "data_dir", data_dir)
     setattr(args, "dataset_name", dataset_name)
     setattr(args, "data_type", data_type)
     setattr(args, "backbone", backbone)
-    setattr(args, "graph", False)
+    setattr(args, "graph", True)
     setattr(args, "sim_data_dir", sim_data_dir)
+    setattr(args, "domain", domain_name)
     setattr(args, "device", torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
     print(args)
     set_random_seed(args.seed)

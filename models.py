@@ -1,6 +1,6 @@
 import torch.nn as nn
 import backbones
-from PI_layers import PhiLayer_1D
+from PI_layers import PhiLayer_1D, PhiLayer_2D
 
 class PINet(nn.Module):
     def __init__(self, num_class,
@@ -8,10 +8,15 @@ class PINet(nn.Module):
                  base_net='alexnet',
                  use_bottleneck=False,
                  use_PIlayer = True,
+                 PI_layer_type = "1D",
                  bottleneck_width=256,
                  max_iter=1000, **kwargs):
         super(PINet, self).__init__()
-        self.pi_layer = PhiLayer_1D(sim_feature, num_class)
+        self.sim_feature = sim_feature
+        if PI_layer_type == "1D":
+            self.pi_layer = PhiLayer_1D(sim_feature, num_class)
+        elif PI_layer_type == "2D":
+            self.pi_layer = PhiLayer_2D(sim_feature, num_class, sim_feature.shape[1], bottleneck_width)
         self.base_network = backbones.get_backbone(base_net)
         self.use_PIlayer = use_PIlayer
         self.use_bottleneck = use_bottleneck
@@ -52,22 +57,26 @@ class PINet(nn.Module):
         return clf_loss, source_clf
 
     def get_parameters(self, initial_lr=1.0):
-        # params = [
-        #     {'params': self.base_network.parameters(), 'lr': 0.1 * initial_lr},
-        #     {'params': self.classifier_layer.parameters(), 'lr': 1.0 * initial_lr},
-        # ]
         params = [
             {'params': self.base_network.parameters(), 'lr': 0.1 * initial_lr},
+            {'params': self.classifier_layer.parameters(), 'lr': 1.0 * initial_lr},
         ]
+        # params = [
+        #     {'params': self.base_network.parameters(), 'lr': 0.1 * initial_lr},
+        # ]
         if self.use_bottleneck:
             params.append(
                 {'params': self.bottleneck_layer.parameters(), 'lr': 1.0 * initial_lr}
             )
-
+        if self.use_PIlayer:
+            params.append(
+                {'params': self.pi_layer.parameters(), 'lr': 1.0 * initial_lr}
+            )
         return params
 
 
     def predict(self, x):
+        x = self.pi_layer(x)
         x = self.base_network(x)
         if self.use_bottleneck:
             x = self.bottleneck_layer(x)
